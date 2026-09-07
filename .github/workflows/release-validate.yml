@@ -1028,6 +1028,9 @@ jobs:
             v0.12.23)
               EXPECTED_MAP_SHA256=c5a310465b9005573c9fef79534e34a7822447d6c7004f24271ed59df61fe2a6
               ;;
+            v0.12.27)
+              EXPECTED_MAP_SHA256=5dfc6f51c2b2cde6ba0f152b06de0ae35624c09e8ad159b3555cd92c6674178d
+              ;;
             *)
               echo "::error ::$VERSION has no reviewed stable-promotion map identity"
               exit 1
