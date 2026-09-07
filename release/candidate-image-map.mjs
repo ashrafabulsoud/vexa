@@ -161,6 +161,18 @@ export const BUILD_MATRIX_BY_IMAGE = {
     repository: "v012-terminal",
     context: "clients/terminal",
     dockerfile: "clients/terminal/Dockerfile",
+    // THE VARIANT THIS LINE SHIPS. NEXT_PUBLIC_TERMINAL_MODE is baked into the Next.js bundle at
+    // build time (clients/terminal/Dockerfile:33,78; src/app/mode.ts:25) — it cannot be switched
+    // by a runtime env var, so the release matrix is the only place that decides which terminal
+    // the channel publishes. Until this line existed the matrix passed NO build args at all, so
+    // vexaai/v012-terminal:<tag> was the full workbench while the demo the pilot was shown
+    // (app.dev.vexa.ai) was the minutes lane — the same variant/tag mismatch the Dockerfile's own
+    // note at :85-95 records from 2026-09-02, one layer up. The published image records the
+    // outcome in LABEL ai.vexa.terminal.mode, which release-validate asserts on both the amd64
+    // and arm64 identity legs; the packet (candidate-images.json) pins digests and knows nothing
+    // about variant, so that label assertion is the only thing standing between this line and a
+    // full-terminal publish.
+    build_args: "NEXT_PUBLIC_TERMINAL_MODE=minutes",
   },
   "vexaai/vexa-lite": {
     name: "lite",

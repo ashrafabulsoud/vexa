@@ -122,6 +122,14 @@ env:
     vexaai/v012-flows
     vexaai/vexa-bot
     vexaai/vexa-lite
+  # The terminal variant THIS release line publishes, asserted against the published image's own
+  # LABEL ai.vexa.terminal.mode on both identity legs. NEXT_PUBLIC_TERMINAL_MODE is compiled into
+  # the Next.js bundle (clients/terminal/Dockerfile:33,78 → src/app/mode.ts:25), so the variant is
+  # a property of the BYTES and no runtime flag can change it — which is why it has to be proved on
+  # the artifact rather than trusted from the build. This line ships the minutes terminal: bytes
+  # identical to the demo the pilot was shown at app.dev.vexa.ai. A line that ships the full
+  # workbench sets this to `default` (the Dockerfile's spelling for "no mode arg was passed").
+  EXPECTED_TERMINAL_MODE: minutes
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────────────────────
@@ -431,6 +439,24 @@ jobs:
             docker run --rm --entrypoint "" "$ref" "$@" \
               || { echo "::error title=image-identity::$ref FAILED its identity probe ($*) — the published image does not contain what its name promises"; exit 1; }
           }
+          # "What its name promises" includes WHICH TERMINAL it is. NEXT_PUBLIC_TERMINAL_MODE is
+          # compiled into the Next.js bundle at build time (clients/terminal/Dockerfile:33,78 →
+          # src/app/mode.ts:25), so the variant is a property of the published bytes that no
+          # runtime flag can change — and the default and minutes variants both build, both start
+          # and both pass every other probe here (the Dockerfile's own note at :85-95 records the
+          # 2026-09-02 instance where only three grepped UI strings told them apart). The image
+          # carries the answer in LABEL ai.vexa.terminal.mode; read it off the image already pulled
+          # — the same fact `crane config` would return, at zero extra registry reads.
+          assert_terminal_mode() {
+            local ref="$1" mode
+            mode="$(docker inspect --format '{{ with .Config.Labels }}{{ index . "ai.vexa.terminal.mode" }}{{ end }}' "$ref" 2>/dev/null || true)"
+            case "$mode" in ""|"<no value>") mode="(absent)" ;; esac
+            [ "$mode" = "$EXPECTED_TERMINAL_MODE" ] || {
+              echo "::error title=image-identity::$ref carries LABEL ai.vexa.terminal.mode=\"$mode\", expected \"$EXPECTED_TERMINAL_MODE\" — this release line publishes the minutes terminal, the same bundle the pilot was shown. NEXT_PUBLIC_TERMINAL_MODE is baked in at build time, so this image cannot be reduced at runtime: it IS the wrong variant. Fix the build (build_args on vexaai/v012-terminal in release/candidate-image-map.mjs) and re-publish — do not relax this check."
+              exit 1
+            }
+            echo "   ✓ $ref terminal variant: ai.vexa.terminal.mode=$mode"
+          }
           for img in $ALL_IMAGES; do
             ref="$img:$VERSION"
             echo "== $ref"
@@ -453,7 +479,10 @@ jobs:
               vexaai/v012-meeting-api)  probe "$ref" python -c "import meeting_api" ;;
               vexaai/v012-gateway)      probe "$ref" python -c "import gateway" ;;
               vexaai/v012-mcp)          probe "$ref" python -c "import vexa_mcp" ;;
-              vexaai/v012-terminal)     probe "$ref" node -e "require('fs').accessSync('/app/server.mjs')" ;;
+              vexaai/v012-terminal)
+                probe "$ref" node -e "require('fs').accessSync('/app/server.mjs')"
+                assert_terminal_mode "$ref"
+                ;;
               # One image, three entrypoints (worker · mailbox · api) selected by command — so the
               # identity claim is that all three import, plus the MCP tool manifest flows_api serves
               # from /.well-known/mcp-tools.json (absent ⇒ that route 503s and the assembled MCP
@@ -792,6 +821,18 @@ jobs:
             docker run --rm --entrypoint "" "$ref" "$@" \
               || { echo "::error title=validate-arm64::$ref FAILED its identity probe ($*) — the published arm64 image does not contain what its name promises"; exit 1; }
           }
+          # Same variant assertion as the amd64 image-identity leg — the terminal is multi-arch and
+          # the build arg is per-build, so the arm64 manifest can carry the wrong bundle on its own.
+          assert_terminal_mode() {
+            local ref="$1" mode
+            mode="$(docker inspect --format '{{ with .Config.Labels }}{{ index . "ai.vexa.terminal.mode" }}{{ end }}' "$ref" 2>/dev/null || true)"
+            case "$mode" in ""|"<no value>") mode="(absent)" ;; esac
+            [ "$mode" = "$EXPECTED_TERMINAL_MODE" ] || {
+              echo "::error title=validate-arm64::$ref carries LABEL ai.vexa.terminal.mode=\"$mode\", expected \"$EXPECTED_TERMINAL_MODE\" — this release line publishes the minutes terminal, the same bundle the pilot was shown. NEXT_PUBLIC_TERMINAL_MODE is baked in at build time, so this image cannot be reduced at runtime: it IS the wrong variant. Fix the build (build_args on vexaai/v012-terminal in release/candidate-image-map.mjs) and re-publish — do not relax this check."
+              exit 1
+            }
+            echo "   ✓ $ref terminal variant: ai.vexa.terminal.mode=$mode (arm64)"
+          }
           for img in $ALL_IMAGES; do
             if [ "$img" = "vexaai/vexa-bot" ]; then
               echo "== $img:$VERSION (skipped — amd64-only)"
@@ -815,7 +856,10 @@ jobs:
               vexaai/v012-meeting-api)  probe "$ref" python -c "import meeting_api" ;;
               vexaai/v012-gateway)      probe "$ref" python -c "import gateway" ;;
               vexaai/v012-mcp)          probe "$ref" python -c "import vexa_mcp" ;;
-              vexaai/v012-terminal)     probe "$ref" node -e "require('fs').accessSync('/app/server.mjs')" ;;
+              vexaai/v012-terminal)
+                probe "$ref" node -e "require('fs').accessSync('/app/server.mjs')"
+                assert_terminal_mode "$ref"
+                ;;
               vexaai/v012-flows)        probe "$ref" python -c "import flows_worker, flows_integrations.mailbox, flows_integrations.flows_api, os; assert os.path.exists('/app/mcp.tools.v1.json')" ;;
               vexaai/vexa-lite)         probe "$ref" bash -c 'test -f /etc/supervisor/conf.d/vexa.conf && test -x /entrypoint.sh' ;;
               *)
@@ -860,10 +904,31 @@ jobs:
       - uses: jlumbroso/free-disk-space@v1.3.1
       # k3s' containerd pulls anonymously by default — authenticate to dodge Docker Hub's
       # per-IP anonymous rate limit (shared across GitHub runners).
+      #
+      # `mirrors` added 2026-09-07 (#715): this leg pulls every chart image through containerd, one
+      # pull per pod, and in the field that has been the single largest block of Docker Hub reads in
+      # a run — run 29604399516's helm job spent its whole 20-minute `helm --wait` in
+      # ImagePullBackOff on 429s across 10 pods. Google's public pull-through cache serves those
+      # manifests with no Hub quota; verified 2026-09-07 at zero Hub cost that mirror.gcr.io answers
+      # anonymous manifest GETs 200 for the whole vexaai/* release set, returning digests identical
+      # to the reviewed packet in releases/v0.13.0/candidate-images.json.
+      #
+      # registry-1.docker.io is listed SECOND on purpose: it is the authenticated fallback for
+      # anything the mirror cannot serve, and naming it explicitly does not rely on k3s' implicit
+      # "default endpoint last" behaviour. `configs` is untouched and deliberately has no entry for
+      # mirror.gcr.io — containerd keys credentials by the host it contacts, so the vexaai token is
+      # never offered to Google. (The `configs` auth path itself is still the unverified one this
+      # issue's C1 exists to measure — k3s#12736; the mirror reduces how much rides on it, and
+      # proves nothing about it.)
       - name: Registry auth for k3s
         run: |
           sudo mkdir -p /etc/rancher/k3s
           sudo tee /etc/rancher/k3s/registries.yaml >/dev/null <<EOF
+          mirrors:
+            docker.io:
+              endpoint:
+                - "https://mirror.gcr.io"
+                - "https://registry-1.docker.io"
           configs:
             registry-1.docker.io:
               auth:
@@ -877,6 +942,18 @@ jobs:
           # poll until it answers, then wait for node readiness.
           for i in $(seq 1 60); do kubectl get nodes >/dev/null 2>&1 && break; sleep 5; done
           kubectl wait --for=condition=Ready node --all --timeout=300s
+      # A config k3s silently ignored would look exactly like a working one until the 429s start, so
+      # read back what containerd actually generated. hosts.toml carries servers + capabilities only
+      # — credentials live elsewhere (config.toml), so this prints nothing secret.
+      - name: Containerd resolves docker.io through the mirror (#715)
+        run: |
+          set -euo pipefail
+          HOSTS=/var/lib/rancher/k3s/agent/etc/containerd/certs.d/docker.io/hosts.toml
+          sudo test -f "$HOSTS" || { echo "::error ::k3s generated no hosts.toml for docker.io — registries.yaml was ignored (#715)"; exit 1; }
+          sudo cat "$HOSTS"
+          sudo grep -q 'mirror\.gcr\.io' "$HOSTS" \
+            || { echo "::error ::k3s' containerd host config for docker.io does not name mirror.gcr.io — every chart-image pull will bill Docker Hub (#715)"; exit 1; }
+          echo "✓ containerd tries mirror.gcr.io before registry-1.docker.io for docker.io"
       - name: helm install from published images
         run: |
           helm upgrade --install vexa deploy/helm/charts/vexa -n vexa --create-namespace \
