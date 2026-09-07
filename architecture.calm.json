@@ -402,7 +402,7 @@
    "unique-id": "whisper",
    "node-type": "module",
    "name": "whisper",
-   "description": "whisper — atomic module in meetings",
+   "description": "whisper — stt.v1 egress: PCM window to OpenAI-compatible transcriptions, or ElevenLabs Scribe adapted at this edge",
    "metadata": [
     {
      "path": "core/meetings/modules/whisper"

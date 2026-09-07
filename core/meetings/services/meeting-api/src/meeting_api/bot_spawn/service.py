@@ -110,6 +110,13 @@ _TERMINAL_STATUSES = ("completed", "failed")
 # blocking on a verdict that predates the operator's fix.
 _STT_VERDICT_MAX_AGE_S = 60.0
 
+
+def _bot_stt_backend_env() -> Optional[dict[str, str]]:
+    """Forward TRANSCRIPTION_BACKEND into the bot so a private Scribe proxy is selected
+    even when the URL hostname is not elevenlabs.io. Empty → omitted (hostname detection)."""
+    backend = (os.getenv("TRANSCRIPTION_BACKEND") or "").strip()
+    return {"TRANSCRIPTION_BACKEND": backend} if backend else None
+
 # Construct-URL templates per platform (the parent's ``Platform.construct_meeting_url``, core set).
 # NO jitsi template: a jitsi room name is scoped to a DEPLOYMENT (meet.jit.si is only the public
 # one), so constructing a URL from the bare id would silently join the public room of that name —
@@ -797,6 +804,7 @@ async def request_bot(
         workload_id=f"mtg-{meeting_id}-{connection_id[:8]}",
         invocation=invocation,
         callback_url=f"{meeting_api_url}/runtime/callback",
+        extra_env=_bot_stt_backend_env(),
     )
     try:
         result = await runtime.create_workload(spec)

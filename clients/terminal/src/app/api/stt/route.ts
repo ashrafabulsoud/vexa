@@ -1,16 +1,17 @@
 /** POST /api/stt[?prompt=…] — speech-to-text proxy for composer dictation.
  *
  *  Body: audio/wav (16 kHz mono PCM from ui-kit/micDictation). Forwards to the same
- *  transcription service the meeting pipeline uses (`TRANSCRIPTION_SERVICE_URL`,
- *  OpenAI-compatible /v1/audio/transcriptions — see @vexa/transcribe-whisper's
- *  TranscriptionClient for the canonical contract). `prompt` carries the already-
- *  confirmed text for context continuity (streaming re-submission, exactly like the
- *  meeting pipeline). Returns `{ text, words }` — word timestamps drive the client's
- *  LocalAgreement confirm/trim. The bearer token stays server-side.
+ *  transcription service the meeting pipeline uses (`TRANSCRIPTION_SERVICE_URL`).
+ *  OpenAI-compatible `/v1/audio/transcriptions` by default; ElevenLabs Scribe
+ *  `/v1/speech-to-text` when the host (or TRANSCRIPTION_BACKEND) selects it —
+ *  see @vexa/transcribe-whisper. `prompt` carries already-confirmed text for
+ *  streaming continuity (same as the meeting pipeline). Returns `{ text, words }`
+ *  — word timestamps drive the client's LocalAgreement confirm/trim. The STT
+ *  token stays server-side.
  */
 import { NextResponse } from "next/server";
 import { resolveApiKey } from "../proxyAuth";
-import { sttEndpoint } from "./endpoint";
+import { isElevenLabsStt, sttEndpoint } from "./endpoint";
 
 export const runtime = "nodejs";
 
@@ -37,16 +38,21 @@ export async function POST(req: Request): Promise<NextResponse> {
 
   const form = new FormData();
   form.append("file", new Blob([wav], { type: "audio/wav" }), "dictation.wav");
-  // The deployment's STT model id (validating backends reject unknown ids) — same env the
-  // meeting pipeline's invocation carries; unset → whisper-1.
-  form.append("model", process.env.TRANSCRIPTION_MODEL || "whisper-1");
-  form.append("response_format", "verbose_json");
-  form.append("timestamp_granularities", "word");
-  if (prompt) form.append("prompt", prompt.slice(0, 800));
-
+  const elevenlabs = isElevenLabsStt(base);
   const headers: Record<string, string> = {};
   const token = process.env.TRANSCRIPTION_SERVICE_TOKEN;
-  if (token) headers.Authorization = `Bearer ${token}`;
+  if (elevenlabs) {
+    form.append("model_id", process.env.TRANSCRIPTION_MODEL || "scribe_v2");
+    form.append("timestamps_granularity", "word");
+    form.append("tag_audio_events", "false");
+    if (token) headers["xi-api-key"] = token;
+  } else {
+    form.append("model", process.env.TRANSCRIPTION_MODEL || "whisper-1");
+    form.append("response_format", "verbose_json");
+    form.append("timestamp_granularities", "word");
+    if (prompt) form.append("prompt", prompt.slice(0, 800));
+    if (token) headers.Authorization = `Bearer ${token}`;
+  }
 
   try {
     const r = await fetch(endpoint, { method: "POST", headers, body: form, signal: AbortSignal.timeout(30000) });
@@ -54,10 +60,18 @@ export async function POST(req: Request): Promise<NextResponse> {
       const detail = await r.text().catch(() => "");
       return NextResponse.json({ error: `Transcription failed (${r.status})`, detail: detail.slice(0, 300) }, { status: 502 });
     }
-    const data = (await r.json()) as { text?: string; segments?: UpstreamSegment[] };
-    const words = (data.segments ?? []).flatMap((s) => s.words ?? [])
-      .filter((w) => typeof w.word === "string")
-      .map((w) => ({ word: w.word as string, start: w.start ?? 0, end: w.end ?? 0 }));
+    const data = (await r.json()) as {
+      text?: string;
+      segments?: UpstreamSegment[];
+      words?: Array<{ text?: string; type?: string; start?: number; end?: number }>;
+    };
+    const words = elevenlabs
+      ? (data.words ?? [])
+          .filter((w) => (w.type ?? "word") === "word" && typeof w.text === "string")
+          .map((w) => ({ word: (w.text as string).trim(), start: w.start ?? 0, end: w.end ?? 0 }))
+      : (data.segments ?? []).flatMap((s) => s.words ?? [])
+          .filter((w) => typeof w.word === "string")
+          .map((w) => ({ word: w.word as string, start: w.start ?? 0, end: w.end ?? 0 }));
     return NextResponse.json({ text: (data.text ?? "").trim(), words });
   } catch (err) {
     const timeout = err instanceof Error && err.name === "TimeoutError";

@@ -82,6 +82,7 @@ secrets:
   anthropicAuthToken: ""
   anthropicBaseUrl: ""
   claudeCodeOauthToken: ""
+  ttsApiToken: ""                 # optional TTS token forwarded to spawned bots (ElevenLabs xi-api-key or OpenAI-compatible)
 
 # ---------- Shared backing config ----------
 database:
@@ -248,6 +249,11 @@ runtime:
     confirmThreshold: ""
     maxBufferSec: ""
     idleTimeoutSec: ""
+  tts:
+    serviceUrl: ""
+    backend: ""
+    voiceId: ""
+    model: ""
   # Active-phase remote-audio silence window. Empty uses the bot's 10-minute default.
   aloneSilenceWindowMs: ""
   resources:

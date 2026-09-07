@@ -10,6 +10,7 @@ The guides split by the plane they touch — **meetings**, **agents**, or both c
 |---|---|
 | `send-a-bot.mdx` | meetings — send a bot to a live call |
 | `stream-transcript.mdx` | meetings — consume the live transcript stream |
+| `elevenlabs.mdx` | meetings — ElevenLabs Scribe STT + bot-layer TTS |
 | `recordings.mdx` | meetings — retrieve recordings + post-meeting artifacts |
 | `post-meeting-report.mdx` | meetings → agents — generate a report from a finished meeting |
 | `daily-brief.mdx` | agents — scheduled summarization |

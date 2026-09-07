@@ -60,11 +60,17 @@ export BOT_SPEAKER_SUBMIT_INTERVAL_SEC="${BOT_SPEAKER_SUBMIT_INTERVAL_SEC:-}"
 export BOT_SPEAKER_CONFIRM_THRESHOLD="${BOT_SPEAKER_CONFIRM_THRESHOLD:-}"
 export BOT_SPEAKER_MAX_BUFFER_SEC="${BOT_SPEAKER_MAX_BUFFER_SEC:-}"
 export BOT_SPEAKER_IDLE_TIMEOUT_SEC="${BOT_SPEAKER_IDLE_TIMEOUT_SEC:-}"
+export TTS_SERVICE_URL="${TTS_SERVICE_URL:-}"
+export TTS_API_TOKEN="${TTS_API_TOKEN:-}"
+export TTS_BACKEND="${TTS_BACKEND:-}"
+export TTS_VOICE_ID="${TTS_VOICE_ID:-}"
+export TTS_MODEL="${TTS_MODEL:-}"
 
 export TRANSCRIPTION_SERVICE_URL="${TRANSCRIPTION_SERVICE_URL:-}"
 export TRANSCRIPTION_SERVICE_TOKEN="${TRANSCRIPTION_SERVICE_TOKEN:-}"
 # STT model id for validating backends (Groq/vLLM); empty → whisper-1.
 export TRANSCRIPTION_MODEL="${TRANSCRIPTION_MODEL:-}"
+export TRANSCRIPTION_BACKEND="${TRANSCRIPTION_BACKEND:-}"
 
 # Optional operator-owned service-authority.v1 boundary. The config stays credential-free; the
 # signing secret remains a separate inherited environment value and is never printed below.

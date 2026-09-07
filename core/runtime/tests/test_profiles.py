@@ -57,11 +57,35 @@ def test_meeting_bot_uses_browser_image_from_env(monkeypatch):
     assert reg.get("meeting-bot").idle_timeout_sec == 0
 
 
+def test_meeting_bot_forwards_tts_env(monkeypatch):
+    monkeypatch.setenv("TTS_SERVICE_URL", "https://api.elevenlabs.io")
+    monkeypatch.setenv("TTS_VOICE_ID", "voice-1")
+    monkeypatch.delenv("TTS_API_TOKEN", raising=False)
+    monkeypatch.delenv("TTS_BACKEND", raising=False)
+    monkeypatch.delenv("TTS_MODEL", raising=False)
+    monkeypatch.delenv("BOT_ALONE_SILENCE_WINDOW_MS", raising=False)
+    monkeypatch.delenv("BOT_SPEAKER_MIN_AUDIO_SEC", raising=False)
+    monkeypatch.delenv("BOT_SPEAKER_CONFIRM_THRESHOLD", raising=False)
+    monkeypatch.delenv("BOT_SPEAKER_SUBMIT_INTERVAL_SEC", raising=False)
+    monkeypatch.delenv("BOT_SPEAKER_MAX_BUFFER_SEC", raising=False)
+    monkeypatch.delenv("BOT_SPEAKER_IDLE_TIMEOUT_SEC", raising=False)
+    reg = default_registry()
+    env = reg.get("meeting-bot").base_env
+    assert env["TTS_SERVICE_URL"] == "https://api.elevenlabs.io"
+    assert env["TTS_VOICE_ID"] == "voice-1"
+    assert "TTS_API_TOKEN" not in env
+
+
 def test_meeting_bot_forwards_speaker_stream_tuning(monkeypatch):
     monkeypatch.setenv("BOT_ALONE_SILENCE_WINDOW_MS", "60000")
     monkeypatch.setenv("BOT_SPEAKER_MIN_AUDIO_SEC", "1")
     monkeypatch.setenv("BOT_SPEAKER_CONFIRM_THRESHOLD", "1")
     monkeypatch.delenv("BOT_SPEAKER_SUBMIT_INTERVAL_SEC", raising=False)
+    monkeypatch.delenv("TTS_SERVICE_URL", raising=False)
+    monkeypatch.delenv("TTS_VOICE_ID", raising=False)
+    monkeypatch.delenv("TTS_API_TOKEN", raising=False)
+    monkeypatch.delenv("TTS_BACKEND", raising=False)
+    monkeypatch.delenv("TTS_MODEL", raising=False)
     reg = default_registry()
     assert reg.get("meeting-bot").base_env == {
         "BOT_ALONE_SILENCE_WINDOW_MS": "60000",

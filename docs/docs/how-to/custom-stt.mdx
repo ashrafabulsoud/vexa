@@ -3,9 +3,11 @@ title: "Use a custom STT endpoint"
 description: "Point Vexa at any OpenAI-compatible speech-to-text service, including self-hosted FunASR or SenseVoice gateways."
 ---
 
-Vexa sends meeting audio to one OpenAI-compatible speech-to-text endpoint. The endpoint can be the
-bundled faster-whisper service, Vexa's hosted transcription service, or a self-hosted gateway that
-implements the same request shape.
+Vexa sends meeting audio to one speech-to-text endpoint. By default that endpoint is
+OpenAI-compatible (`/v1/audio/transcriptions`). The endpoint can be the bundled faster-whisper
+service, Vexa's hosted transcription service, or a self-hosted gateway that implements the same
+request shape. **ElevenLabs Scribe is a different dialect** — use
+[Use ElevenLabs for STT and TTS](/how-to/elevenlabs) instead of this page.
 
 Use this path when you want a different ASR model without changing the bot, meeting-api, or live
 transcript pipeline.

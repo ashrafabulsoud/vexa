@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STT_PATH, sttEndpoint } from "../stt/endpoint";
+import { ELEVENLABS_STT_PATH, STT_PATH, isElevenLabsStt, sttEndpoint } from "../stt/endpoint";
 
 /** #511 C4 — one URL contract across all four consumers. TRANSCRIPTION_SERVICE_URL is accepted as a
  *  bare base OR as the full endpoint; the dictation route used to append blindly, so a full-path URL
@@ -28,5 +28,20 @@ describe("sttEndpoint — the shared TRANSCRIPTION_SERVICE_URL rule", () => {
   it("leaves a self-hosted path prefix intact", () => {
     // a reverse-proxied deployment (…/stt) is a base like any other — append, do not rewrite
     expect(sttEndpoint("https://internal.example/stt")).toBe(`https://internal.example/stt${STT_PATH}`);
+  });
+
+  it("selects Scribe on an ElevenLabs host", () => {
+    expect(isElevenLabsStt("https://api.elevenlabs.io")).toBe(true);
+    expect(sttEndpoint("https://api.elevenlabs.io")).toBe(`https://api.elevenlabs.io${ELEVENLABS_STT_PATH}`);
+    expect(sttEndpoint("https://api.elevenlabs.io/v1/audio/transcriptions")).toBe(
+      `https://api.elevenlabs.io${ELEVENLABS_STT_PATH}`,
+    );
+  });
+
+  it("selects Scribe when TRANSCRIPTION_BACKEND=elevenlabs on a private host", () => {
+    expect(isElevenLabsStt("https://stt.internal", "elevenlabs")).toBe(true);
+    expect(sttEndpoint("https://stt.internal", "elevenlabs")).toBe(
+      `https://stt.internal${ELEVENLABS_STT_PATH}`,
+    );
   });
 });

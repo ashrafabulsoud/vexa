@@ -192,6 +192,42 @@
    "targets": ["compose", "helm", "lite"]
   },
   {
+   "key": "TTS_SERVICE_URL",
+   "class": "defaulted",
+   "default": "(unset — speak is a no-op)",
+   "description": "TTS base URL forwarded to spawned bots (OpenAI-compatible /v1/audio/speech, or ElevenLabs when the host is elevenlabs.io / TTS_BACKEND=elevenlabs)",
+   "targets": ["compose", "helm", "lite"]
+  },
+  {
+   "key": "TTS_API_TOKEN",
+   "class": "defaulted",
+   "secret": true,
+   "default": "(unset)",
+   "description": "TTS auth token forwarded to spawned bots — Bearer/X-API-Key for OpenAI-compatible, xi-api-key for ElevenLabs",
+   "targets": ["compose", "helm", "lite"]
+  },
+  {
+   "key": "TTS_BACKEND",
+   "class": "defaulted",
+   "default": "(unset — inferred from TTS_SERVICE_URL)",
+   "description": "`elevenlabs` selects ElevenLabs TTS even when the URL hostname is not elevenlabs.io",
+   "targets": ["compose", "helm", "lite"]
+  },
+  {
+   "key": "TTS_VOICE_ID",
+   "class": "defaulted",
+   "default": "(unset — required for ElevenLabs when the speak act voice is `auto`)",
+   "description": "Default ElevenLabs voice id used when an acts.v1 speak carries voice=auto",
+   "targets": ["compose", "helm", "lite"]
+  },
+  {
+   "key": "TTS_MODEL",
+   "class": "defaulted",
+   "default": "(unset — tts-1 OpenAI-compatible, eleven_flash_v2_5 ElevenLabs)",
+   "description": "TTS model id forwarded to spawned bots",
+   "targets": ["compose", "helm", "lite"]
+  },
+  {
    "key": "AGENT_IMAGE",
    "class": "capability",
    "capability": "agent_spawn",

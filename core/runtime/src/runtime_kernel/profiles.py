@@ -142,6 +142,11 @@ def default_registry() -> ProfileRegistry:
             "BOT_SPEAKER_CONFIRM_THRESHOLD",
             "BOT_SPEAKER_MAX_BUFFER_SEC",
             "BOT_SPEAKER_IDLE_TIMEOUT_SEC",
+            "TTS_SERVICE_URL",
+            "TTS_API_TOKEN",
+            "TTS_BACKEND",
+            "TTS_VOICE_ID",
+            "TTS_MODEL",
         )
         if os.environ.get(key, "").strip()
     }

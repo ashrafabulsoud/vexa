@@ -137,7 +137,9 @@ async function main(): Promise<void> {
   {
     const realFetch = globalThis.fetch;
     const modelParts: Array<string | null> = [];
-    (globalThis as any).fetch = async (_url: unknown, init: { body: Buffer }) => {
+    const urls: string[] = [];
+    (globalThis as any).fetch = async (url: unknown, init: { body: Buffer }) => {
+      urls.push(String(url));
       const m = Buffer.from(init.body).toString('latin1').match(/name="model"\r\n\r\n([^\r]*)\r\n/);
       modelParts.push(m ? m[1] : null);
       return new Response(JSON.stringify({ text: '', language: 'en', duration: 0.1, segments: [] }), { status: 200 });
@@ -145,9 +147,20 @@ async function main(): Promise<void> {
     const pcm = new Float32Array(1600).fill(0.05);
     await createTranscribe(baseInv({ transcriptionServiceUrl: 'http://stt.test', transcriptionModel: 'whisper-large-v3-turbo' }))(pcm);
     await createTranscribe(baseInv({ transcriptionServiceUrl: 'http://stt.test' }))(pcm);
+    const prev = process.env.TRANSCRIPTION_BACKEND;
+    process.env.TRANSCRIPTION_BACKEND = 'elevenlabs';
+    (globalThis as any).fetch = async (url: unknown) => {
+      urls.push(String(url));
+      return new Response(JSON.stringify({ text: 'ok', words: [] }), { status: 200 });
+    };
+    await createTranscribe(baseInv({ transcriptionServiceUrl: 'http://stt.proxy' }))(pcm);
+    if (prev === undefined) delete process.env.TRANSCRIPTION_BACKEND;
+    else process.env.TRANSCRIPTION_BACKEND = prev;
     (globalThis as any).fetch = realFetch;
     check('invocation.transcriptionModel rides the model form part', modelParts[0] === 'whisper-large-v3-turbo', JSON.stringify(modelParts[0]));
     check('no transcriptionModel → default whisper-1 (wire unchanged)', modelParts[1] === 'whisper-1', JSON.stringify(modelParts[1]));
+    check('TRANSCRIPTION_BACKEND=elevenlabs posts Scribe path from createTranscribe',
+      urls[2] === 'http://stt.proxy/v1/speech-to-text', urls[2]);
   }
 
   // ── 5) LEGACY MIXED LANE (Zoom/Jitsi) speaker-label boundary (#890): a turn the lane has NOT

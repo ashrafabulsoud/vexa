@@ -152,19 +152,26 @@ def run_models_test(config: dict, env: Optional[dict] = None,
 
 # ── transcription ─────────────────────────────────────────────────────────────────────────────
 
-# The OpenAI-compatible transcriptions path every consumer agrees on. Appended only when the
-# configured URL does not already carry it — the one rule shared with the config.v1 probe
-# (deploy/contracts/config.v1/preflight.py:probe_url), the bot's client, and the dictation route.
-_STT_PATH = "/v1/audio/transcriptions"
+# The STT path every consumer agrees on — OpenAI-compatible by default, Scribe when the URL
+# (or TRANSCRIPTION_BACKEND) names ElevenLabs. Shared with the config.v1 probe and the bot client.
+from control_plane.config_preflight import (
+    ELEVENLABS_STT_PATH,
+    audio_probe_body,
+    elevenlabs_probe_body,
+    stt_probe_url,
+)
 
 def _transcribe_probe(endpoint: str, token: str) -> tuple:
     """POST the shared audio probe body — the same request the boot preflight makes."""
-    from control_plane.config_preflight import audio_probe_body
-
-    content_type, body = audio_probe_body()
-    req = urllib.request.Request(
-        endpoint, data=body, method="POST",
-        headers={"Content-Type": content_type, "Authorization": f"Bearer {token}"})
+    elevenlabs = endpoint.rstrip("/").endswith(ELEVENLABS_STT_PATH)
+    if elevenlabs:
+        model = (os.environ.get("TRANSCRIPTION_MODEL") or "").strip() or "scribe_v2"
+        content_type, body = elevenlabs_probe_body(model)
+        headers = {"Content-Type": content_type, "xi-api-key": token}
+    else:
+        content_type, body = audio_probe_body()
+        headers = {"Content-Type": content_type, "Authorization": f"Bearer {token}"}
+    req = urllib.request.Request(endpoint, data=body, method="POST", headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=_STT_PROBE_TIMEOUT) as r:
             return r.status, r.read().decode("utf-8", "replace")
@@ -184,7 +191,8 @@ def _verify_transcribes(base: str, token: str, source: str, probe: TranscribePro
     account reports 0.0 minutes and transcribes perfectly, so a balance threshold condemns the
     working credential and clears nothing. Sending audio makes the verdict independent of whose
     token it is, so no account identity is named anywhere in this codebase."""
-    endpoint = base if base.endswith(_STT_PATH) else base + _STT_PATH
+    backend = (os.environ.get("TRANSCRIPTION_BACKEND") or "").strip()
+    endpoint = stt_probe_url(base, backend)
     who = f" ({account})" if account else ""
     try:
         status, body = probe(endpoint, token)
@@ -228,9 +236,9 @@ def run_transcription_test(url: str, token: str, source: str, get: HttpGet = _ge
     if not base:
         return _result(False, "No transcription backend configured at any level "
                               "(user, global, or deployment env).", source=source)
-    # Bots post to {url}/v1/audio/transcriptions — strip the path for the account lookup.
+    # Bots post to the backend's transcriptions path — strip known suffixes for the account lookup.
     probe_base = base
-    for suffix in ("/v1/audio/transcriptions", "/v1/audio", "/v1"):
+    for suffix in ("/v1/audio/transcriptions", "/v1/speech-to-text", "/v1/audio", "/v1"):
         if probe_base.endswith(suffix):
             probe_base = probe_base[: -len(suffix)]
             break

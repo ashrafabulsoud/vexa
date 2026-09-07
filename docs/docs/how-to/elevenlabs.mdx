@@ -1,0 +1,91 @@
+---
+title: "Use ElevenLabs for STT and TTS"
+description: "Point Vexa meeting transcription (and bot-layer speak) at ElevenLabs Scribe and ElevenLabs TTS."
+---
+
+Vexa's meeting pipeline speaks an OpenAI-compatible STT contract by default. ElevenLabs Scribe is
+**not** that contract, so Vexa translates at the STT egress instead of leaking Scribe vocabulary
+into the bot or collector.
+
+Use this when you want ElevenLabs to transcribe meeting audio, optionally with the same API key
+driving bot-layer text-to-speech into the call.
+
+<Warning>
+**Speak API is still 404.** ElevenLabs TTS is wired at the **bot layer** (`acts.v1` `speak` →
+PCM → virtual mic). `POST /bots/{platform}/{id}/speak` remains unserved — see
+[Interactive bots](/interactive-bots). STT through ElevenLabs is the production-reachable path.
+</Warning>
+
+## Speech-to-text (Scribe)
+
+Set these in `deploy/compose/.env` (or the equivalent Lite/Helm env):
+
+```bash
+TRANSCRIPTION_SERVICE_URL=https://api.elevenlabs.io
+TRANSCRIPTION_SERVICE_TOKEN=<xi-api-key>
+TRANSCRIPTION_MODEL=scribe_v2
+```
+
+An `*.elevenlabs.io` host (including residency hosts such as `api.eu.residency.elevenlabs.io`)
+selects Scribe automatically: the bot, boot probe, Settings **Test** button, and terminal dictation
+route all POST `/v1/speech-to-text` with `xi-api-key` and `model_id`.
+
+`TRANSCRIPTION_MODEL` defaults to `scribe_v2` on this dialect. Set `scribe_v1` if that is the model
+your key is billed for.
+
+### Private reverse proxy
+
+If Scribe is reached through a hostname that is **not** under `elevenlabs.io`:
+
+```bash
+TRANSCRIPTION_SERVICE_URL=https://stt.example.internal
+TRANSCRIPTION_SERVICE_TOKEN=<xi-api-key>
+TRANSCRIPTION_BACKEND=elevenlabs
+TRANSCRIPTION_MODEL=scribe_v2
+```
+
+Without `TRANSCRIPTION_BACKEND=elevenlabs`, Vexa would POST OpenAI-compatible
+`/v1/audio/transcriptions` and the probe would 404.
+
+### What the adapter maps
+
+ElevenLabs returns `{ text, language_code, words[] }`. Vexa maps that onto the same
+`TranscriptionResult` Whisper uses: spoken `type: "word"` entries become word timestamps,
+`eng` becomes `en`, spacing and audio-event tokens are dropped, and word `logprob` values
+feed the existing low-confidence filter. Speaker names still come from the meeting pipeline
+(glow / DOM / captions) — Scribe diarization is not used.
+
+## Text-to-speech (bot layer)
+
+Forwarded from the runtime onto every spawned bot:
+
+```bash
+TTS_SERVICE_URL=https://api.elevenlabs.io
+TTS_API_TOKEN=<xi-api-key>
+TTS_VOICE_ID=<voice-id>
+TTS_MODEL=eleven_flash_v2_5
+```
+
+The bot streams `pcm_24000` into PulseAudio `tts_sink` → `virtual_mic`. `TTS_VOICE_ID` is
+required when the speak act's `voice` is `auto`; an explicit voice on the act wins. Missing
+URL or voice id is a logged no-op, never a thrown fault.
+
+Helm: `runtime.tts.serviceUrl` / `voiceId` / `model` / `backend`, and `secrets.ttsApiToken`.
+
+## Preflight
+
+The same live audio probe that guards OpenAI-compatible STT runs against Scribe. A bad key is
+`401` on `/health` (`stt: misconfigured`) and `503` on `POST /bots`. After fixing the key, wait
+for the probe TTL or call `GET /health?force=1`.
+
+```bash
+curl -sS https://api.elevenlabs.io/v1/speech-to-text \
+  -H "xi-api-key: $TRANSCRIPTION_SERVICE_TOKEN" \
+  -F file=@sample.wav \
+  -F model_id=scribe_v2
+```
+
+Accept the endpoint only if it returns HTTP 2xx and a non-empty `text` field.
+
+OpenAI-compatible custom STT (FunASR, Groq, the bundled whisper unit) is unchanged — see
+[Use a custom STT endpoint](/how-to/custom-stt).
