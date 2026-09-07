@@ -1,0 +1,15 @@
+{
+  "name": "Vexa",
+  "user": "ubuntu",
+  "install": "set -e\ncorepack enable\nif ! command -v uv >/dev/null 2>&1 && [ ! -x \"$HOME/.local/bin/uv\" ]; then curl -LsSf https://astral.sh/uv/install.sh | sh; fi\nexport PATH=\"$HOME/.local/bin:$PATH\"\nif [ -x \"$HOME/.local/bin/uv\" ]; then sudo -n ln -sf \"$HOME/.local/bin/uv\" /usr/local/bin/uv 2>/dev/null || true; sudo -n ln -sf \"$HOME/.local/bin/uvx\" /usr/local/bin/uvx 2>/dev/null || true; fi\nONNXRUNTIME_NODE_INSTALL=skip pnpm install --frozen-lockfile",
+  "terminals": [
+    {
+      "name": "terminal",
+      "command": "pnpm --filter @vexa/terminal dev",
+      "description": "Vexa Terminal (Next.js) dev server on http://localhost:3000. Serves the terminal UI; connect a backend via GATEWAY_URL / VEXA_ADMIN_API_URL for full functionality."
+    }
+  ],
+  "ports": [
+    { "name": "terminal", "port": 3000 }
+  ]
+}
