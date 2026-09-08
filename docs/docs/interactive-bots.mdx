@@ -15,7 +15,7 @@ it is **not** a straight restoration of the pre-0.12 endpoints.
 | Surface | Contract (`api.v1`) | Reachable today | Notes |
 |---|---|---|---|
 | Chat **read** | sealed | ✅ `GET /bots/{platform}/{native_meeting_id}/chat` | mounted and served |
-| **Speak** | sealed | ❌ 404 | proven live at the bot layer (acts.v1 `speak` → TTS → virtual mic), **not wired at the API layer** — tracked in [#514](https://github.com/Vexa-ai/vexa/issues/514) |
+| **Speak** | sealed | ❌ 404 | proven live at the bot layer (acts.v1 `speak` → TTS → virtual mic), **not wired at the API layer** — tracked in [#514](https://github.com/Vexa-ai/vexa/issues/514). Bot-layer TTS may be OpenAI-compatible or [ElevenLabs](/how-to/elevenlabs) (`TTS_SERVICE_URL` / `TTS_VOICE_ID`); that does not mount this REST surface. |
 | Chat **write** | sealed | ❌ 404 | Teams chat write is prepared as [#500](https://github.com/Vexa-ai/vexa/issues/500) |
 | Screen share | sealed | ❌ 404 | planned back in 0.12.x |
 | Avatar / virtual camera | sealed | ❌ 404 | planned back in 0.12.x |

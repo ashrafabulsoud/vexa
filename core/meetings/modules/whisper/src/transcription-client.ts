@@ -1,5 +1,12 @@
 import { log } from './log.js';
 import { isLowConfidenceSegment } from './confidence.js';
+import {
+  defaultSttModel,
+  resolveTranscriptionBackend,
+  sttEndpoint,
+  type TranscriptionBackend,
+} from './backend.js';
+import { mapElevenLabsTranscript } from './elevenlabs.js';
 
 export interface TranscriptionWord {
   word: string;
@@ -45,10 +52,13 @@ export interface TranscriptionClientConfig {
   /** Minimum silence duration (ms) for VAD to split segments. Lower = more splits at natural pauses.
    *  Default: server default (160ms). Use ~100ms for more granular segments. */
   minSilenceDurationMs?: number;
-  /** STT model id sent as the OpenAI-compatible `model` form part. Backends that validate it
-   *  (Groq, vLLM, gateways) need their served name; the bundled unit ignores it (its model is
-   *  the unit's own MODEL_SIZE). Default: "whisper-1". */
+  /** STT model id sent as the OpenAI-compatible `model` form part (or ElevenLabs `model_id`).
+   *  Backends that validate it (Groq, vLLM, gateways, Scribe) need their served name; the
+   *  bundled unit ignores it (its model is the unit's own MODEL_SIZE). Default: "whisper-1"
+   *  for OpenAI-compatible, "scribe_v2" for ElevenLabs. */
   model?: string;
+  /** Explicit STT dialect. Unset → inferred from `serviceUrl` (elevenlabs.io → Scribe). */
+  backend?: TranscriptionBackend | string;
 }
 
 /** The STT boundary's FAILURE vocabulary (P5 + P18: an adapter must translate the
@@ -102,13 +112,11 @@ export class TranscriptionClient {
   private maxSpeechDurationSec: number | undefined;
   private minSilenceDurationMs: number | undefined;
   private model: string;
+  private backend: TranscriptionBackend;
   private responseFormat: 'verbose_json' | 'json' = 'verbose_json';
   constructor(config: TranscriptionClientConfig) {
-    // Ensure serviceUrl ends with the transcriptions endpoint
-    this.serviceUrl = config.serviceUrl.replace(/\/+$/, '');
-    if (!this.serviceUrl.endsWith('/v1/audio/transcriptions')) {
-      this.serviceUrl += '/v1/audio/transcriptions';
-    }
+    this.backend = resolveTranscriptionBackend(config.serviceUrl, config.backend);
+    this.serviceUrl = sttEndpoint(config.serviceUrl, this.backend);
     this.apiToken = config.apiToken;
     this.maxRetries = config.maxRetries ?? 3;
     this.retryDelayMs = config.retryDelayMs ?? 1000;
@@ -116,7 +124,7 @@ export class TranscriptionClient {
     this.sampleRate = config.sampleRate ?? 16000;
     this.maxSpeechDurationSec = config.maxSpeechDurationSec;
     this.minSilenceDurationMs = config.minSilenceDurationMs;
-    this.model = config.model ?? 'whisper-1';
+    this.model = defaultSttModel(this.backend, config.model);
   }
 
   /**
@@ -180,61 +188,88 @@ export class TranscriptionClient {
     parts.push(wavBuffer);
     parts.push(Buffer.from('\r\n'));
 
-    // Model part (required by OpenAI-compatible API; validating backends reject unknown ids)
-    parts.push(Buffer.from(
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="model"\r\n\r\n` +
-      `${this.model}\r\n`
-    ));
-
-    // Response format part
-    parts.push(Buffer.from(
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="response_format"\r\n\r\n` +
-      `${this.responseFormat}\r\n`
-    ));
-
-    // Language part (if specified)
-    if (language) {
+    if (this.backend === 'elevenlabs') {
       parts.push(Buffer.from(
         `--${boundary}\r\n` +
-        `Content-Disposition: form-data; name="language"\r\n\r\n` +
-        `${language}\r\n`
+        `Content-Disposition: form-data; name="model_id"\r\n\r\n` +
+        `${this.model}\r\n`
+      ));
+      parts.push(Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="timestamps_granularity"\r\n\r\n` +
+        `word\r\n`
+      ));
+      parts.push(Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="tag_audio_events"\r\n\r\n` +
+        `false\r\n`
+      ));
+      if (language) {
+        parts.push(Buffer.from(
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="language_code"\r\n\r\n` +
+          `${language}\r\n`
+        ));
+      }
+    } else {
+      // Model part (required by OpenAI-compatible API; validating backends reject unknown ids)
+      parts.push(Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="model"\r\n\r\n` +
+        `${this.model}\r\n`
+      ));
+
+      // Response format part
+      parts.push(Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="response_format"\r\n\r\n` +
+        `${this.responseFormat}\r\n`
+      ));
+
+      // Language part (if specified)
+      if (language) {
+        parts.push(Buffer.from(
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="language"\r\n\r\n` +
+          `${language}\r\n`
+        ));
+      }
+
+      // Request word-level timestamps
+      parts.push(Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="timestamp_granularities"\r\n\r\n` +
+        `word\r\n`
       ));
     }
 
-    // Request word-level timestamps
-    parts.push(Buffer.from(
-      `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="timestamp_granularities"\r\n\r\n` +
-      `word\r\n`
-    ));
+    if (this.backend !== 'elevenlabs') {
+      // Max speech segment duration (controls how often Whisper splits segments)
+      if (this.maxSpeechDurationSec !== undefined) {
+        parts.push(Buffer.from(
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="max_speech_duration_s"\r\n\r\n` +
+          `${this.maxSpeechDurationSec}\r\n`
+        ));
+      }
 
-    // Max speech segment duration (controls how often Whisper splits segments)
-    if (this.maxSpeechDurationSec !== undefined) {
-      parts.push(Buffer.from(
-        `--${boundary}\r\n` +
-        `Content-Disposition: form-data; name="max_speech_duration_s"\r\n\r\n` +
-        `${this.maxSpeechDurationSec}\r\n`
-      ));
-    }
+      // Min silence duration for VAD segment splitting (lower = more splits at natural pauses)
+      if (this.minSilenceDurationMs !== undefined) {
+        parts.push(Buffer.from(
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="min_silence_duration_ms"\r\n\r\n` +
+          `${this.minSilenceDurationMs}\r\n`
+        ));
+      }
 
-    // Min silence duration for VAD segment splitting (lower = more splits at natural pauses)
-    if (this.minSilenceDurationMs !== undefined) {
-      parts.push(Buffer.from(
-        `--${boundary}\r\n` +
-        `Content-Disposition: form-data; name="min_silence_duration_ms"\r\n\r\n` +
-        `${this.minSilenceDurationMs}\r\n`
-      ));
-    }
-
-    // Prompt: previous confirmed text as context for streaming continuity
-    if (prompt) {
-      parts.push(Buffer.from(
-        `--${boundary}\r\n` +
-        `Content-Disposition: form-data; name="prompt"\r\n\r\n` +
-        `${prompt}\r\n`
-      ));
+      // Prompt: previous confirmed text as context for streaming continuity
+      if (prompt) {
+        parts.push(Buffer.from(
+          `--${boundary}\r\n` +
+          `Content-Disposition: form-data; name="prompt"\r\n\r\n` +
+          `${prompt}\r\n`
+        ));
+      }
     }
 
     // End boundary
@@ -246,7 +281,8 @@ export class TranscriptionClient {
       'Content-Type': `multipart/form-data; boundary=${boundary}`,
     };
     if (this.apiToken) {
-      headers['Authorization'] = `Bearer ${this.apiToken}`;
+      if (this.backend === 'elevenlabs') headers['xi-api-key'] = this.apiToken;
+      else headers['Authorization'] = `Bearer ${this.apiToken}`;
     }
 
     const controller = new AbortController();
@@ -266,6 +302,17 @@ export class TranscriptionClient {
       }
 
       const data = await response.json() as any;
+      if (this.backend === 'elevenlabs') {
+        const mapped = mapElevenLabsTranscript(data, language);
+        const segments = mapped.segments.filter((s) => !isLowConfidenceSegment(s));
+        const text = mapped.segments.length
+          ? segments.map((s) => (s.text || '').trim()).filter(Boolean).join(' ')
+          : mapped.text;
+        if (mapped.segments.length && segments.length < mapped.segments.length) {
+          log(`[STT] dropped ${mapped.segments.length - segments.length}/${mapped.segments.length} low-confidence segment(s)`);
+        }
+        return { ...mapped, text, segments };
+      }
 
       const allSegments = (data.segments || []).map((s: any) => ({
         start: s.start || 0,

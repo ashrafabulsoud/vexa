@@ -15,5 +15,15 @@ export type {
   TranscriptionClientConfig,
   TranscriptionFaultKind,
 } from './transcription-client.js';
+export {
+  resolveTranscriptionBackend,
+  sttEndpoint,
+  defaultSttModel,
+  OPENAI_STT_PATH,
+  ELEVENLABS_STT_PATH,
+  ELEVENLABS_DEFAULT_MODEL,
+} from './backend.js';
+export type { TranscriptionBackend } from './backend.js';
+export { mapElevenLabsTranscript } from './elevenlabs.js';
 export { isLowConfidenceSegment } from './confidence.js';
 export { setLogger } from './log.js';

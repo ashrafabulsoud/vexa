@@ -17,9 +17,10 @@ are public.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `TRANSCRIPTION_SERVICE_URL` | — | STT service URL, e.g. `http://<gpu-host>:8083`. Give it the **base URL** (canonical) or the full `…/v1/audio/transcriptions` endpoint — every consumer appends the path only when it is missing, so both shapes behave identically. Point it at the bundled service you deploy separately (`deploy/transcription`) or any OpenAI-compatible endpoint. Unset + default `transcribe_enabled=true` → `POST /bots` answers **503** naming the missing keys (not a silent empty transcript). |
-| `TRANSCRIPTION_SERVICE_TOKEN` | — | STT auth token — must match the `API_TOKEN` of your `deploy/transcription` unit, or a token from `vexa.ai/account`. |
-| `TRANSCRIPTION_MODEL` | `whisper-1` | STT model id sent on every transcription request (the OpenAI-compatible `model` field). **Set it when the backend validates model ids** — Groq (`whisper-large-v3-turbo`), OpenAI (`whisper-1` / `gpt-4o-transcribe`), vLLM/LiteLLM (the served name) — or every request fails `model_not_found`. Ignored by the bundled `deploy/transcription` unit, whose model is its own `MODEL_SIZE`. |
+| `TRANSCRIPTION_SERVICE_URL` | — | STT service URL, e.g. `http://<gpu-host>:8083` or `https://api.elevenlabs.io`. Give it the **base URL** (canonical) or the full endpoint — every consumer appends the path only when it is missing. OpenAI-compatible backends use `/v1/audio/transcriptions`; an `*.elevenlabs.io` host (or `TRANSCRIPTION_BACKEND=elevenlabs`) uses Scribe `/v1/speech-to-text`. Unset + default `transcribe_enabled=true` → `POST /bots` answers **503** naming the missing keys (not a silent empty transcript). |
+| `TRANSCRIPTION_SERVICE_TOKEN` | — | STT auth token — must match the `API_TOKEN` of your `deploy/transcription` unit, a token from `vexa.ai/account`, or an ElevenLabs `xi-api-key`. |
+| `TRANSCRIPTION_MODEL` | `whisper-1` (OpenAI-compatible) / `scribe_v2` (ElevenLabs) | STT model id sent on every transcription request. **Set it when the backend validates model ids** — Groq (`whisper-large-v3-turbo`), OpenAI (`whisper-1` / `gpt-4o-transcribe`), ElevenLabs (`scribe_v2` / `scribe_v1`), vLLM/LiteLLM (the served name) — or every request fails `model_not_found`. Ignored by the bundled `deploy/transcription` unit, whose model is its own `MODEL_SIZE`. |
+| `TRANSCRIPTION_BACKEND` | inferred from the URL | `elevenlabs` forces the Scribe dialect when the URL hostname is not under `elevenlabs.io` (a private reverse proxy). Unset → OpenAI-compatible unless the host is ElevenLabs. See [Use ElevenLabs for STT and TTS](/how-to/elevenlabs). |
 | `TRANSCRIBE_ENABLED` | `true` | Deployment-level default for a spawn's `transcribe_enabled` when `POST /bots` does not say. Resolution: **explicit request body wins** → else this env → else `true`. Set `false` for a deliberately no-STT deployment: bots spawn **capture-only** instead of answering 503. Leaving it **empty means `true`** — only an explicit `false`/`0`/`no`/`off` opts out. |
 | `RECORDING_ENABLED` | `true` | Deployment-level default for a spawn's recording when `POST /bots` does not say. Same empty-means-default rule as above. |
 | `BOT_ALONE_SILENCE_WINDOW_MS` | `600000` | Active-phase remote-audio silence window before the bot leaves with `completed(left_alone)`. Forwarded to spawned bots. A request's `automatic_leave.max_time_left_alone` overrides it. |
@@ -28,6 +29,18 @@ are public.
 | `BOT_SPEAKER_CONFIRM_THRESHOLD` | `2` | Consecutive matching STT results required to confirm a segment. `1` lowers latency but reduces LocalAgreement protection against corrections. |
 | `BOT_SPEAKER_MAX_BUFFER_SEC` | `30` | Maximum buffered Google Meet audio before a forced submission. |
 | `BOT_SPEAKER_IDLE_TIMEOUT_SEC` | `15` | Flush/reset timeout after a speaker stops producing audio. |
+
+## Text-to-speech (bot speak path)
+
+These are forwarded from the runtime onto every spawned bot. They do **not** wire `POST /bots/.../speak` (that route still 404s — [Interactive bots](/interactive-bots)). They power the bot-layer `acts.v1` `speak` path when a speak act arrives.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `TTS_SERVICE_URL` | — | TTS base URL. OpenAI-compatible `/v1/audio/speech` by default; an `*.elevenlabs.io` host (or `TTS_BACKEND=elevenlabs`) uses `/v1/text-to-speech/{voice}/stream?output_format=pcm_24000`. Unset → speak is a no-op. |
+| `TTS_API_TOKEN` | — | TTS auth token (`X-API-Key` for OpenAI-compatible, `xi-api-key` for ElevenLabs). |
+| `TTS_BACKEND` | inferred from the URL | `elevenlabs` forces the ElevenLabs dialect on a private proxy. |
+| `TTS_VOICE_ID` | — | Default ElevenLabs voice id when the speak act's `voice` is `auto`. Required for ElevenLabs speak; without it the bot logs a no-op. |
+| `TTS_MODEL` | `tts-1` / `eleven_flash_v2_5` | Model id for the configured dialect. |
 
 The STT service is the **GPU workload, deployed separately** from this stack — see
 [Deployment → Transcription](/deployment#transcription-the-separate-gpu-unit). The main stack

@@ -356,6 +356,24 @@
       "targets": [
         "compose"
       ]
+    },
+    {
+      "key": "TRANSCRIPTION_MODEL",
+      "class": "defaulted",
+      "default": "(unset — wizard probe sends whisper-1, or scribe_v2 when the backend is ElevenLabs)",
+      "description": "STT model id the Settings→Models Test probe sends — OpenAI-compatible `model` or ElevenLabs `model_id`. Same env floor as meeting-api; empty uses the dialect default",
+      "targets": [
+        "compose"
+      ]
+    },
+    {
+      "key": "TRANSCRIPTION_BACKEND",
+      "class": "defaulted",
+      "default": "(unset — inferred from TRANSCRIPTION_SERVICE_URL; elevenlabs.io → Scribe)",
+      "description": "STT dialect for Settings→Models Test: `elevenlabs` selects Scribe (`/v1/speech-to-text`, xi-api-key) when the URL hostname is not elevenlabs.io",
+      "targets": [
+        "compose"
+      ]
     }
   ],
   "capabilities": {

@@ -117,20 +117,30 @@
    "key": "TRANSCRIPTION_SERVICE_URL",
    "class": "capability",
    "capability": "stt",
-   "description": "STT base URL the spawned bot transcribes against (the client appends /v1/audio/transcriptions) — self-hosted deploy/transcription or a hosted vexa.ai token's endpoint"
+   "description": "STT base URL the spawned bot transcribes against — OpenAI-compatible `/v1/audio/transcriptions` by default, or ElevenLabs Scribe `/v1/speech-to-text` when the host is under elevenlabs.io (or TRANSCRIPTION_BACKEND=elevenlabs)"
   },
   {
    "key": "TRANSCRIPTION_SERVICE_TOKEN",
    "class": "capability",
    "capability": "stt",
    "secret": true,
-   "description": "bearer token for the STT service (must match that unit's API_TOKEN)"
+   "description": "STT auth token — bearer for OpenAI-compatible backends, xi-api-key for ElevenLabs Scribe"
   },
   {
    "key": "TRANSCRIPTION_MODEL",
    "class": "defaulted",
-   "default": "(unset — the whisper client sends whisper-1)",
-   "description": "STT model id bot_spawn threads into the invocation (the OpenAI-compatible `model` form part) — required by backends that validate model ids (Groq, vLLM); ignored by the bundled deploy/transcription unit. Helm plumbing is a declared follow-up (deploy/helm/README.md) — use extraEnv there for now",
+   "default": "(unset — the whisper client sends whisper-1, or scribe_v2 when the backend is ElevenLabs)",
+   "description": "STT model id bot_spawn threads into the invocation — OpenAI-compatible `model` or ElevenLabs `model_id`. Required by backends that validate model ids (Groq, vLLM, Scribe); ignored by the bundled deploy/transcription unit. Helm plumbing is a declared follow-up (deploy/helm/README.md) — use extraEnv there for now",
+   "targets": [
+    "compose",
+    "lite"
+   ]
+  },
+  {
+   "key": "TRANSCRIPTION_BACKEND",
+   "class": "defaulted",
+   "default": "(unset — inferred from TRANSCRIPTION_SERVICE_URL; elevenlabs.io → Scribe)",
+   "description": "STT dialect: `elevenlabs` selects ElevenLabs Scribe (`/v1/speech-to-text`, xi-api-key) even when the URL hostname is not elevenlabs.io (a private reverse proxy). Unset → OpenAI-compatible unless the URL host is under elevenlabs.io",
    "targets": [
     "compose",
     "lite"

@@ -159,6 +159,11 @@ services:
       - BOT_SPEAKER_CONFIRM_THRESHOLD=${BOT_SPEAKER_CONFIRM_THRESHOLD:-}
       - BOT_SPEAKER_MAX_BUFFER_SEC=${BOT_SPEAKER_MAX_BUFFER_SEC:-}
       - BOT_SPEAKER_IDLE_TIMEOUT_SEC=${BOT_SPEAKER_IDLE_TIMEOUT_SEC:-}
+      - TTS_SERVICE_URL=${TTS_SERVICE_URL:-}
+      - TTS_API_TOKEN=${TTS_API_TOKEN:-}
+      - TTS_BACKEND=${TTS_BACKEND:-}
+      - TTS_VOICE_ID=${TTS_VOICE_ID:-}
+      - TTS_MODEL=${TTS_MODEL:-}
       - VEXA_AGENT_SRC_MOUNT=${VEXA_AGENT_SRC_MOUNT:-}
       - REDIS_URL=redis://redis:6379/0
       # The Runtime brokers model credentials into spawned agents. Subscription credentials may be
@@ -334,6 +339,7 @@ services:
       - TRANSCRIPTION_SERVICE_URL=${TRANSCRIPTION_SERVICE_URL:-}
       - TRANSCRIPTION_SERVICE_TOKEN=${TRANSCRIPTION_SERVICE_TOKEN:-}
       - TRANSCRIPTION_MODEL=${TRANSCRIPTION_MODEL:-}
+      - TRANSCRIPTION_BACKEND=${TRANSCRIPTION_BACKEND:-}
       # Deployment-level defaults for a spawn's transcribe/recording flags when the request does not
       # say (config.v1 `defaulted` keys). TRANSCRIBE_ENABLED=false makes a no-STT deployment spawn
       # capture-only bots instead of 503-ing every default POST /bots.
@@ -918,6 +924,7 @@ services:
       - TRANSCRIPTION_SERVICE_URL=${TRANSCRIPTION_SERVICE_URL:-}
       - TRANSCRIPTION_SERVICE_TOKEN=${TRANSCRIPTION_SERVICE_TOKEN:-}
       - TRANSCRIPTION_MODEL=${TRANSCRIPTION_MODEL:-}
+      - TRANSCRIPTION_BACKEND=${TRANSCRIPTION_BACKEND:-}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:-dev-nextauth-secret}
       # Public origin when self-hosting behind a domain/reverse-proxy (e.g. https://vexa.example.com).
       # Empty by default (localhost). Setting an https:// value also flips auth cookies to Secure.

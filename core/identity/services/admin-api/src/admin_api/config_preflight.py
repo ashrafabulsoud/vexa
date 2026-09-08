@@ -46,6 +46,7 @@ import urllib.request
 from functools import lru_cache
 from pathlib import Path
 from typing import List, Mapping, Optional
+from urllib.parse import urlparse
 
 log = logging.getLogger("config.v1.preflight")
 
@@ -154,6 +155,30 @@ def probe_url(base: str, path: str) -> str:
     return base if base.endswith(path) else base + path
 
 
+OPENAI_STT_PATH = "/v1/audio/transcriptions"
+ELEVENLABS_STT_PATH = "/v1/speech-to-text"
+ELEVENLABS_DEFAULT_MODEL = "scribe_v2"
+
+
+def is_elevenlabs_stt(url: str, backend: str = "") -> bool:
+    """True when this STT URL should speak ElevenLabs Scribe rather than OpenAI-compatible."""
+    if (backend or "").strip().lower() == "elevenlabs":
+        return True
+    host = (urlparse(url or "").hostname or "").lower()
+    return host == "elevenlabs.io" or host.endswith(".elevenlabs.io")
+
+
+def stt_probe_url(base: str, backend: str = "") -> str:
+    """The transcriptions URL a bot/probe/wizard must hit for this configured backend."""
+    raw = (base or "").strip().rstrip("/")
+    for suffix in (OPENAI_STT_PATH, ELEVENLABS_STT_PATH):
+        if raw.endswith(suffix):
+            raw = raw[: -len(suffix)]
+            break
+    path = ELEVENLABS_STT_PATH if is_elevenlabs_stt(base, backend) else OPENAI_STT_PATH
+    return raw + path if raw else ""
+
+
 #: A ~1s 16 kHz mono WAV of a quiet tone — the smallest body that is unambiguously *audio*, so a
 #: metered backend must price it and answer 200 or 402 rather than rejecting it unparsed.
 _PROBE_WAV_SECONDS = 1
@@ -185,6 +210,11 @@ def audio_probe_body(model: str = "whisper-1") -> tuple:
     exactly as ``probe_url`` shares the URL rule. Both must ask identically, or the wizard greens
     what the boot refuses."""
     return _multipart({"model": model, "response_format": "json"}, "probe.wav", _probe_wav())
+
+
+def elevenlabs_probe_body(model: str = ELEVENLABS_DEFAULT_MODEL) -> tuple:
+    """Scribe's audio probe body: ``model_id`` (not OpenAI ``model``) + the same ~1s WAV."""
+    return _multipart({"model_id": model}, "probe.wav", _probe_wav())
 
 
 def _multipart(fields: Mapping[str, str], filename: str, payload: bytes) -> tuple:
@@ -225,17 +255,27 @@ def _http_probe(spec: dict, env: Mapping[str, str], timeout: float) -> dict:
     service's availability to the endpoint's. All demote the /health row identically — only actors
     that REFUSE need the distinction."""
     base = (env.get(spec["url_key"]) or "").strip().rstrip("/")
-    url = probe_url(base, spec.get("path") or "")
+    backend = (env.get("TRANSCRIPTION_BACKEND") or "").strip()
+    declared_path = spec.get("path") or ""
+    elevenlabs = declared_path in ("", OPENAI_STT_PATH, ELEVENLABS_STT_PATH) and is_elevenlabs_stt(base, backend)
+    url = stt_probe_url(base, backend) if elevenlabs else probe_url(base, declared_path)
     body = b""
     content_type = None
     if (spec.get("payload") or "") == "audio":
-        content_type, body = audio_probe_body(spec.get("payload_model") or "whisper-1")
+        if elevenlabs:
+            model = (env.get("TRANSCRIPTION_MODEL") or "").strip() or ELEVENLABS_DEFAULT_MODEL
+            content_type, body = elevenlabs_probe_body(model)
+        else:
+            content_type, body = audio_probe_body(spec.get("payload_model") or "whisper-1")
     req = urllib.request.Request(url, data=body, method=(spec.get("method") or "POST"))
     if content_type:
         req.add_header("Content-Type", content_type)
     token = (env.get(spec["auth_key"]) or "").strip() if spec.get("auth_key") else ""
     if token:
-        req.add_header("Authorization", f"Bearer {token}")
+        if elevenlabs:
+            req.add_header("xi-api-key", token)
+        else:
+            req.add_header("Authorization", f"Bearer {token}")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310 — declared endpoint
             status = int(r.status)

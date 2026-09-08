@@ -213,3 +213,18 @@ def test_transcription_probe_hits_the_transcriptions_path_once():
         assert seen == [("https://api.openai.com/v1/audio/transcriptions", "sk-good")], (
             f"{configured} → {seen}"
         )
+
+
+def test_transcription_elevenlabs_hits_scribe_path():
+    """An ElevenLabs URL must probe /v1/speech-to-text, never the OpenAI transcriptions path."""
+    for configured in ("https://api.elevenlabs.io", "https://api.elevenlabs.io/v1/speech-to-text"):
+        seen = []
+        def probe(endpoint, token):
+            seen.append((endpoint, token))
+            return 200, '{"text":"ok"}'
+        out = ct.run_transcription_test(configured, "xi-good", "env", get=_NO_BALANCE, probe=probe)
+        assert out["ok"], f"{configured} must verify green"
+        assert seen == [("https://api.elevenlabs.io/v1/speech-to-text", "xi-good")], (
+            f"{configured} → {seen}"
+        )
+        assert "/v1/speech-to-text" in out["summary"]

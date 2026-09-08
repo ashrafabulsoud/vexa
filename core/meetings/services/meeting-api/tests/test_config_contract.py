@@ -208,6 +208,8 @@ class _ProbeServer:
         self.routes = routes
         self.default_status = default_status
         self.paths: list = []
+        self.headers: list = []
+        self.bodies: list = []
         self._server = None
         self._thread = None
 
@@ -220,6 +222,9 @@ class _ProbeServer:
         class Handler(http.server.BaseHTTPRequestHandler):
             def do_POST(self):  # noqa: N802 — BaseHTTPRequestHandler's interface
                 outer.paths.append(self.path)
+                outer.headers.append({k.lower(): v for k, v in self.headers.items()})
+                length = int(self.headers.get("Content-Length") or 0)
+                outer.bodies.append(self.rfile.read(length) if length else b"")
                 self.send_response(outer.routes.get(self.path, outer.default_status))
                 self.end_headers()
 
@@ -303,6 +308,45 @@ def test_probe_accepts_a_full_path_url_without_double_pathing():
         requested = list(srv.paths)
     assert result["ok"] is True, f"full-path URL must not double-path: requested {requested}"
     assert requested == [_STT_PATH], f"expected exactly one un-doubled request, got {requested}"
+
+
+_ELEVENLABS_PATH = "/v1/speech-to-text"
+
+
+def test_elevenlabs_host_selects_scribe_path():
+    assert cp.is_elevenlabs_stt("https://api.elevenlabs.io") is True
+    assert cp.is_elevenlabs_stt("https://api.eu.residency.elevenlabs.io") is True
+    assert cp.is_elevenlabs_stt("https://api.openai.com") is False
+    assert cp.is_elevenlabs_stt("http://127.0.0.1:9", "elevenlabs") is True
+    assert cp.stt_probe_url("https://api.elevenlabs.io") == "https://api.elevenlabs.io/v1/speech-to-text"
+    assert cp.stt_probe_url("https://api.elevenlabs.io/v1/audio/transcriptions") == (
+        "https://api.elevenlabs.io/v1/speech-to-text"
+    )
+
+
+def test_probe_elevenlabs_posts_scribe_path_with_xi_api_key():
+    """The boot probe must speak Scribe when the URL is ElevenLabs, or spawn 503s a working key."""
+    with _ProbeServer(routes={_ELEVENLABS_PATH: 200, _STT_PATH: 404}) as srv:
+        env = {
+            "TRANSCRIPTION_SERVICE_URL": "https://api.elevenlabs.io",
+            "TRANSCRIPTION_SERVICE_TOKEN": "xi-tok",
+            # Rewrite the host so the live HTTP server is what we hit, while selection still
+            # sees an ElevenLabs URL via TRANSCRIPTION_BACKEND.
+            "TRANSCRIPTION_BACKEND": "elevenlabs",
+        }
+        # Swap the URL to the local server AFTER selection would have used the hostname —
+        # backend=elevenlabs is the operator override for a private/proxy host.
+        env["TRANSCRIPTION_SERVICE_URL"] = srv.base
+        result = cp._http_probe(_stt_probe_spec()["http"], env, timeout=5)
+        requested = list(srv.paths)
+        headers = srv.headers[0] if srv.headers else {}
+    assert result["ok"] is True, f"{result} requested={requested}"
+    assert requested == [_ELEVENLABS_PATH], f"expected Scribe path, got {requested}"
+    assert headers.get("xi-api-key") == "xi-tok"
+    assert "authorization" not in headers
+    assert b'name="model_id"' in srv.bodies[0]
+    assert b"scribe_v2" in srv.bodies[0]
+    assert b'name="model"' not in srv.bodies[0]
 
 
 # ── C3 (#511): a spawn against a SET-but-BROKEN backend refuses with the probe's reason ─────────
